@@ -214,6 +214,29 @@
                             source: { type: 'geojson', data: feature.geometry },
                             paint: { 'line-color': '#36454F', 'line-width': 1 }
                         });
+                        map.addLayer({
+                            'id': `${newLayerId}-label`,
+                            'type': 'symbol',
+                            source: { 
+                                type: 'geojson', 
+                                data: {
+                                    type: 'Feature',
+                                    geometry: feature.geometry,  // Use the geometry for positioning
+                                    properties: { FID: feature.properties.FID }  // Pass FID as a property
+                                }
+                            },
+                            'layout': {
+                                'text-field': ['get', 'FID'],  // Now it can access FID properly
+                                'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'], 
+                                'text-size': 14,
+                                
+                                'text-anchor': 'top',
+                            },
+                            'paint': {
+                                'text-color': '#36454F'
+                            }
+                        });
+                        
                     });
                 }
             });
@@ -221,15 +244,31 @@
 
         function clearPropertyLayers(villageName) {
             if (!propertiesGeoJSON || !villageName) return;
+            
             const villageProperties = propertiesGeoJSON.features.filter(f => f.properties.Village === villageName);
+            
             villageProperties.forEach(feature => {
-                const layerId = `${villageName}-${feature.properties.FID}-boundary`;
-                if (map.getLayer(layerId)) {
-                    map.removeLayer(layerId);
-                    map.removeSource(layerId);
+                const boundaryLayerId = `${villageName}-${feature.properties.FID}-boundary`;
+                const labelLayerId = `${boundaryLayerId}-label`;  // Construct the label layer ID correctly
+                
+                // Remove boundary layer and source
+                if (map.getLayer(boundaryLayerId)) {
+                    map.removeLayer(boundaryLayerId);
+                }
+                if (map.getSource(boundaryLayerId)) {
+                    map.removeSource(boundaryLayerId);
+                }
+                
+                // Remove label layer and source
+                if (map.getLayer(labelLayerId)) {
+                    map.removeLayer(labelLayerId);
+                }
+                if (map.getSource(labelLayerId)) {
+                    map.removeSource(labelLayerId);
                 }
             });
         }
+        
 
         function debounce(func, delay) {
             let timer;
