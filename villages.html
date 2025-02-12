@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Village Selector Map</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+    <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+       <style>
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        .dropdown-container {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            z-index: 1;
+        }
+        .coordinates-container {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background-color: white;
+            padding: 5px;
+            border-radius: 5px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            z-index: 1;
+        }
+        .home-button-container {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 136, 136, 0.595);
+            padding: 2px;
+            border-radius: 5px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            z-index: 2;
+        }
+        #homeButton {
+            background-color: #088;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        #homeButton:hover {
+            background-color: #066;
+        }
+    </style>
+</head>
+<body>
+    <div id='map'></div>
+    <div class="dropdown-container">
+        <label for="villageSelect">Select Village:</label>
+        <select id="villageSelect"></select>      
+    </div>
+    <div class="home-button-container">
+        <button id="homeButton"><i class="fas fa-home"></i> Home</button>
+    </div>       
+    <div class="coordinates-container" id="coordinates">Lng: 0, Lat: 0</div>
+
+    <script>
+        mapboxgl.accessToken = 'pk.eyJ1IjoicmF5YXBhdGk0OSIsImEiOiJjbGVvMWp6OGIwajFpM3luNTBqZHhweXZzIn0.1r2DoIQ1Gf2K3e5WBgDNjA';
+
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v11',
+            center: [80.766, 16.442],
+            zoom: 11.7,
+            attributionControl: false
+        });
+
+        let previousLayerId = null;
+        let propertiesGeoJSON = null;
+
+
+        fetch('./properties.geojson')
+            .then(response => response.json())
+            .then(data => {
+                propertiesGeoJSON = data;
+            })
+            .catch(error => console.error('Error loading properties GeoJSON:', error));
+
+        fetch('./formatted_merged_villages.geojson')
+            .then(response => response.json())
+            .then(geojson => {
+                map.on('load', () => {
+                    map.addSource('villages', {
+                        'type': 'geojson',
+                        'data': geojson
+                    });
+
+                    geojson.features.forEach(feature => {
+                        const layerId = feature.properties.Village;
+
+                        map.addLayer({
+                            'id': layerId,
+                            'type': 'fill',
+                            'source': 'villages',
+                            'filter': ['==', ['get', 'Village'], feature.properties.Village],
+                            'paint': {
+                                'fill-color': '#088',
+                                'fill-opacity': 0.4
+                            }
+                        });
+
+                        map.addLayer({
+                            'id': `${layerId}-boundary`,
+                            'type': 'line',
+                            'source': 'villages',
+                            'filter': ['==', ['get', 'Village'], feature.properties.Village],
+                            'paint': {
+                                'line-color': '#36454F',
+                                'line-width': 0.5
+                            }
+                        });
+
+                        map.addLayer({
+                            'id': `${layerId}-label`,
+                            'type': 'symbol',
+                            'source': 'villages',
+                            'layout': {
+                                'text-field': ['get', 'Village'],
+                                'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+                                'text-size': 14,
+                                'text-offset': [0, -1],
+                                'text-anchor': 'top'
+                            },
+                            'paint': {
+                                'text-color': '#36454F'
+                            }
+                        });
+
+                        map.on('click', layerId, () => {
+                            selectVillage(layerId, geojson);
+                        });
+                    });
+
+                    const villageSelect = document.getElementById('villageSelect');
+                    const villageNames = [...new Set(geojson.features.map(f => f.properties.Village))];
+
+                    const defaultOption = document.createElement('option');
+                    defaultOption.value = "";
+                    defaultOption.textContent = "-";
+                    defaultOption.selected = true;
+                    defaultOption.disabled = true;
+                    villageSelect.appendChild(defaultOption);
+
+                    villageNames.forEach(name => {
+                        const option = document.createElement('option');
+                        option.value = name;
+                        option.textContent = name;
+                        villageSelect.appendChild(option);
+                    });
+
+                    villageSelect.addEventListener('change', debounce((e) => {
+                        const selectedVillage = e.target.value;
+                        selectVillage(selectedVillage, geojson);
+                    }, 300));
+                    
+                    document.getElementById('homeButton').addEventListener('click', () => {
+                        map.flyTo({ center: [80.766, 16.442], zoom: 11.7,speed:0.6 });
+                        if (previousLayerId) {
+                            map.setPaintProperty(previousLayerId, 'fill-opacity', 0.4);
+                            clearPropertyLayers(previousLayerId);
+                        }
+                        document.getElementById('coordinates').textContent = `Lng: 0, Lat: 0`;
+                        villageSelect.value = "";
+                    });
+                });
+            })
+            .catch(error => console.error('Error loading GeoJSON:', error));
+
+        map.on('mousemove', (e) => {
+            document.getElementById('coordinates').textContent = `Lng: ${e.lngLat.lng.toFixed(5)}, Lat: ${e.lngLat.lat.toFixed(5)}`;
+        });
+
+        function selectVillage(villageName, geojson) {
+            const villageFeature = geojson.features.find(f => f.properties.Village === villageName);
+            if (villageFeature) {
+                const coordinates = villageFeature.geometry.coordinates[0];
+                const bounds = coordinates.reduce((b, coord) => b.extend(coord), new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
+                map.fitBounds(bounds, { padding: 20,duration: 3000  });
+
+                if (previousLayerId) {
+                    map.setPaintProperty(previousLayerId, 'fill-opacity', 0.4);
+                    clearPropertyLayers(previousLayerId);
+                }
+
+                map.setPaintProperty(villageName, 'fill-opacity', 0.8);
+                addPropertyLayers(villageName);
+                previousLayerId = villageName;
+            }
+        }
+
+        function addPropertyLayers(villageName) {
+            if (!propertiesGeoJSON) return;
+            const villageProperties = propertiesGeoJSON.features.filter(f => f.properties.Village === villageName);
+            villageProperties.forEach(feature => {
+                const newLayerId = `${villageName}-${feature.properties.FID}-boundary`;
+                if (!map.getLayer(newLayerId)) {
+                    requestAnimationFrame(() => {
+                        map.addLayer({
+                            id: newLayerId,
+                            type: 'line',
+                            source: { type: 'geojson', data: feature.geometry },
+                            paint: { 'line-color': '#36454F', 'line-width': 1 }
+                        });
+                    });
+                }
+            });
+        }
+
+        function clearPropertyLayers(villageName) {
+            if (!propertiesGeoJSON || !villageName) return;
+            const villageProperties = propertiesGeoJSON.features.filter(f => f.properties.Village === villageName);
+            villageProperties.forEach(feature => {
+                const layerId = `${villageName}-${feature.properties.FID}-boundary`;
+                if (map.getLayer(layerId)) {
+                    map.removeLayer(layerId);
+                    map.removeSource(layerId);
+                }
+            });
+        }
+
+        function debounce(func, delay) {
+            let timer;
+            return function (...args) {
+                clearTimeout(timer);
+                timer = setTimeout(() => func.apply(this, args), delay);
+            };
+        }
+    </script>
+</body>
+</html>
